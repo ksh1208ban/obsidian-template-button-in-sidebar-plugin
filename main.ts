@@ -1,134 +1,148 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+// Obsidian과 관련된 여러 모듈을 임포트합니다.
+import {
+	App, // 앱 인터페이스
+	Editor, // 에디터 인터페이스
+	MarkdownView, // 마크다운 뷰 인터페이스
+	Modal, // 모달 인터페이스
+	Notice, // 알림 인터페이스
+	Plugin, // 플러그인 인터페이스
+	PluginSettingTab, // 플러그인 설정 탭 인터페이스
+	Setting, // 설정 인터페이스
+	Workspace, // 작업공간 인터페이스
+	EditorPosition, // 에디터 위치 인터페이스
+  } from 'obsidian';
 
-// Remember to rename these classes and interfaces!
+// 사이드 패널 제어 뷰와 관련된 모듈을 임포트합니다.
+import {
+	SidePanelControlView,
+	SidePanelControlViewType,
+  } from './SidePanelControlView';
+  
+// 리전 설정을 위한 인터페이스 정의
+interface RegionSetting {
+	name: string; // 리전의 이름
+	active: boolean; // 활성화 여부
+	visible: boolean; // 보이는지 여부
+  }
+  
+  // 플러그인 설정을 위한 인터페이스 정의
+  export interface PluginSettings {
+	templateFolder: string;
+	sidePaneSideLeft: Boolean; // 사이드 패널이 왼쪽에 위치하는지 여부
+  }
 
-interface MyPluginSettings {
-	mySetting: string;
+// 기본 설정값 정의
+const DEFAULT_SETTINGS: PluginSettings = {
+	templateFolder: '',
+	sidePaneSideLeft: false,
+  };
+
+export default class TemplateButtonInSidebar extends Plugin {
+	settings: PluginSettings; // 설정
+	private sidePanelControlView: SidePanelControlView; // 사이드 패널 제어 뷰 인스턴스
+
+  // 플러그인 로드 시 실행될 함수
+  async onload() 
+  {
+	console.log('loading TemplateButtonInSidebar');
+    // 설정을 로드합니다.
+    await this.loadSettings();
+	
+    // 사이드 패널 뷰를 등록합니다.
+	this.registerView(SidePanelControlViewType, (leaf) => {
+		this.sidePanelControlView = new SidePanelControlView(leaf, this);
+		return this.sidePanelControlView;
+	  });
+    // 리본 아이콘을 추가하고 클릭 시 사이드 패널 제어 뷰를 토글합니다.
+    this.addRibbonIcon('tv', 'Open template button in sidebar', () => 
+	{
+		this.toggleSidePanelControlView();
+	});
+	// 설정 탭을 추가합니다.
+	this.addSettingTab(new SettingsTab(this.app, this));
+  }
+
+  // 플러그인 언로드 시 실행될 함수 (비워져 있음)
+  onunload() 
+  {
+
+  }
+  // 설정을 로드하는 함수
+  async loadSettings() 
+  {
+    this.settings = Object.assign(DEFAULT_SETTINGS, await this.loadData());
+  }
+
+  // 설정을 저장하는 함수
+  async saveSettings() 
+  {
+    await this.saveData(this.settings);
+  }
+
+  // 사이드 패널 제어 뷰를 토글하는 비공개 함수
+  private readonly toggleSidePanelControlView = async (): Promise<void> => 
+  {
+   	this.app.workspace.detachLeavesOfType(SidePanelControlViewType);
+
+    if (this.settings.sidePaneSideLeft) 
+	{
+      await this.app.workspace.getLeftLeaf(false).setViewState
+	  	({
+			type: SidePanelControlViewType,
+			active: true,
+      	});
+    } 
+	else 
+	{
+      await this.app.workspace.getRightLeaf(false).setViewState
+	  	({	
+			type: SidePanelControlViewType,
+			active: true,
+    	});
+    }
+
+    this.app.workspace.revealLeaf
+	(
+      this.app.workspace.getLeavesOfType(SidePanelControlViewType)[0],
+    );
+  };
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
-}
+// 설정 탭 클래스 정의
+class SettingsTab extends PluginSettingTab {
+	plugin: TemplateButtonInSidebar; // 플러그인 인스턴스
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
-
-	async onload() {
-		await this.loadSettings();
-
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
-				}
-			}
-		});
-
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-	}
-
-	onunload() {
-
-	}
-
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
-
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
+	// 생성자
+	constructor(app: App, plugin: TemplateButtonInSidebar)
+	{
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
-	display(): void {
-		const {containerEl} = this;
+	// 설정 탭이 닫힐 때 실행될 함수
+	close() 
+	{
+		console.log('closed');
+		super.hide();
+	}
 
+	// 설정 탭을 표시하는 함수
+	async display() 
+	{
+		let { containerEl } = this;
 		containerEl.empty();
 
+		// 템플릿 폴더 설정 추가
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
+			.setName('템플릿 폴더 경로')
+			.setDesc('템플릿 파일을 저장할 폴더의 경로를 설정하세요.')
 			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
+				.setPlaceholder('예: Templates')
+				.setValue(this.plugin.settings.templateFolder)
 				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
+					this.plugin.settings.templateFolder = value;
 					await this.plugin.saveSettings();
 				}));
 	}
+
 }
